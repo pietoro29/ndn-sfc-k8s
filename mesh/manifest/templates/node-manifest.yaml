@@ -1,0 +1,69 @@
+{{- range .Values.topology }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .node_name }}
+  labels:
+    app: {{ .node_name }}
+spec:
+  selector:
+    app: {{ .node_name }}
+  ports:
+    - port: 6363
+      targetPort: 6363
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .node_name }}
+  labels:
+    app: {{ .node_name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .node_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .node_name }}
+    spec:
+      containers:
+        - name: {{ .node_name }}
+          image: hydrokhoos/ndn-all:latest
+          tty: true
+          env:
+            - name: NEIGHBORS
+              value: "{{ .neighbors }}"
+          ports:
+            - containerPort: 6363
+          securityContext:
+            privileged: true
+
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo "Pod started. Waiting for activation script..."
+              mkdir -p /run/nfd
+              mkdir -p /tmp/nlsr
+              while true; do sleep 3600; done
+
+          volumeMounts:
+            - name: nfd-config-volume
+              mountPath: /usr/local/etc/ndn/nfd.conf
+              subPath: nfd.conf
+
+            - name: nlsr-config-volume
+              mountPath: /etc/nlsr/
+
+      volumes:
+        - name: nfd-config-volume
+          configMap:
+            name: nfd-config
+
+        - name: nlsr-config-volume
+          configMap:
+            name: nlsr-config-{{ .node_name }}
+{{- end }}

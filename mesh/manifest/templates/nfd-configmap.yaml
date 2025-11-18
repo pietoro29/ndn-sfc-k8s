@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nfd-config
+data:
+  nfd.conf: |
+    {{- .Files.Get "nfd.conf" | nindent 4 }}

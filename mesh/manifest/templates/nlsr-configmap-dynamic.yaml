@@ -1,0 +1,10 @@
+{{- range .Values.topology }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nlsr-config-{{ .node_name }}
+data:
+  nlsr.conf: |
+    {{- tpl ($.Files.Get "nlsr-tpl.conf") . | nindent 4 }}
+{{- end }}
