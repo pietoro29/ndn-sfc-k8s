@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nac-init-script
+data:
+  init.sh: |
+    #!/bin/bash
+    set -e
+    echo "=== NAC Init Script Started ==="
+
+    # 1. ホームディレクトリの準備
+    if [ -d "/data/.ndn" ]; then
+        rm -rf /data/.ndn
+    fi
+    mkdir -p /data/.ndn
+    export HOME=/data
+
+    # 2. アイデンティティ (.p12) のインポート
+    # Secretは /mnt/secrets にマウントされる想定
+    shopt -s nullglob
+    for P12_FILE in /mnt/secrets/*.p12; do
+        echo "Importing identity: $(basename $P12_FILE)"
+        ndnsec import -P "password" "$P12_FILE"
+    done
+
+    # 3. NAC Data (KEK/KDK) の配置
+    # アプリケーションが参照しやすい場所 (/data/nac-data) にコピー
+    mkdir -p /data/nac-data
+
+    # 配列に入れて数をチェックすることで安全に処理する
+    DATA_FILES=(/mnt/secrets/*.data)
+    if [ ${#DATA_FILES[@]} -gt 0 ]; then
+        echo "Found ${#DATA_FILES[@]} data files. Copying..."
+        cp "${DATA_FILES[@]}" /data/nac-data/
+        ls -l /data/nac-data/
+    else
+        echo "No KEK/KDK data found. (This is normal for nodes without access rights)"
+    fi
+
+    echo "=== NAC Init Script Completed ==="

@@ -1,11 +1,7 @@
 topology:
-- neighbors: ndn-node2 ndn-node4 ndn-node5
+- neighbors: ndn-node2
   node_name: ndn-node1
-- neighbors: ndn-node1 ndn-node3 ndn-node5
+- neighbors: ndn-node1 ndn-node3
   node_name: ndn-node2
-- neighbors: ndn-node2 ndn-node4
+- neighbors: ndn-node2
   node_name: ndn-node3
-- neighbors: ndn-node3 ndn-node1
-  node_name: ndn-node4
-- neighbors: ndn-node1 ndn-node2
-  node_name: ndn-node5

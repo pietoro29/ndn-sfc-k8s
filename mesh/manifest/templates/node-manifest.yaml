@@ -30,13 +30,29 @@ spec:
       labels:
         app: {{ .node_name }}
     spec:
+      initContainers:
+        - name: key-setup
+          image: icekarinn/ndn-all:v1.0
+          command: ["/bin/bash", "/usr/local/bin/init.sh"]
+          volumeMounts:
+            - name: ndn-home
+              mountPath: /data
+            - name: node-secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+            - name: nac-init-script
+              mountPath: /usr/local/bin/init.sh
+              subPath: init.sh
+
       containers:
         - name: {{ .node_name }}
-          image: hydrokhoos/ndn-all:latest
+          image: icekarinn/ndn-all:v1.0
           tty: true
           env:
             - name: NEIGHBORS
               value: "{{ .neighbors }}"
+            - name: HOME
+              value: "/data"
           ports:
             - containerPort: 6363
           securityContext:
@@ -58,6 +74,9 @@ spec:
             - name: nlsr-config-volume
               mountPath: /etc/nlsr/
 
+            - name: ndn-home
+              mountPath: /data
+
       volumes:
         - name: nfd-config-volume
           configMap:
@@ -66,4 +85,17 @@ spec:
         - name: nlsr-config-volume
           configMap:
             name: nlsr-config-{{ .node_name }}
+
+        - name: nac-init-script
+          configMap:
+            name: nac-init-script
+            defaultMode: 0755
+
+        - name: node-secrets
+          secret:
+            secretName: ndn-secret-{{ .node_name }}
+            optional: true
+
+        - name: ndn-home
+          emptyDir: {}
 {{- end }}
