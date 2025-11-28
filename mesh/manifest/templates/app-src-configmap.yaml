@@ -1,9 +1,13 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ndn-app-src
+  name: app-src
 data:
   producer.cpp: |
-{{ .Files.Get "apps/producer.cpp" | indent 4 }}
+    {{- .Files.Get "apps/producer.cpp" | nindent 4 }}
+
   consumer.cpp: |
-{{ .Files.Get "apps/consumer.cpp" | indent 4 }}
+    {{- .Files.Get "apps/consumer.cpp" | nindent 4 }}
+
+  nac-utils.hpp: |
+    {{- .Files.Get "apps/nac-utils.hpp" | nindent 4 }}

@@ -77,6 +77,9 @@ spec:
             - name: ndn-home
               mountPath: /data
 
+            - name: app-src-volume
+              mountPath: /usr/src/app
+
       volumes:
         - name: nfd-config-volume
           configMap:
@@ -98,4 +101,8 @@ spec:
 
         - name: ndn-home
           emptyDir: {}
+
+        - name: app-src-volume
+          configMap:
+            name: app-src
 {{- end }}

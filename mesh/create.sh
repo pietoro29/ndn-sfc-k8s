@@ -14,6 +14,12 @@ docker run --rm \
   python generate_values.py
 echo "values.yaml generated."
 
+echo "=== Syncing App Source Code ==="
+# ソースコードをHelmチャート内にコピーする
+# これにより、開発は /mesh/apps で行い、デプロイ時に manifest に反映される
+mkdir -p "${SCRIPT_DIR}/manifest/apps"
+cp "${SCRIPT_DIR}/apps/"* "${SCRIPT_DIR}/manifest/apps/"
+
 echo "=== Installing Helm Chart ==="
 # 既存のものを削除
 if helm status ndn-cluster > /dev/null 2>&1; then

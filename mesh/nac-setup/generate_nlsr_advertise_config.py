@@ -19,6 +19,7 @@ def main():
     # ノードごとの広報リスト
     node_advertisements = {}
     am_base = policy.get('am_prefix_base', '/ndn/AM')
+    org_prefix = policy.get('org_prefix', '/ndn/test')
 
     # ポリシーから広報Prefixを抽出
     for p in policy.get('policies', []):
@@ -29,6 +30,9 @@ def main():
         # 1. KEK配信用のPrefix (/ndn/AM/ndn-node1)
         node_advertisements[owner_node].add(f"{am_base}/{owner_node}")
 
+        #証明書のprefix
+        identity_prefix = f"{org_prefix}/{owner_node}"
+        node_advertisements[owner_node].add(identity_prefix)
         # 2. コンテンツPrefix
         # 注: ここで個別のファイルパスではなく、親ディレクトリを集約して登録するロジックを入れると
         # ルーティングテーブルが爆発しません。今回はそのまま追加します。

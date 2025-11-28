@@ -36,6 +36,12 @@ data:
         echo "No KEK/KDK data found. (This is normal for nodes without access rights)"
     fi
 
+    CERT_FILES=(/mnt/secrets/*.cert)
+    if [ ${#CERT_FILES[@]} -gt 0 ]; then
+        echo "Found cert files. Copying..."
+        cp "${CERT_FILES[@]}" /data/nac-data/
+    fi
+
     CONF_FILES=(/mnt/secrets/*.conf)
     if [ ${#CONF_FILES[@]} -gt 0 ]; then
         echo "Found ${#CONF_FILES[@]} config files. Copying..."
