@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ndn-app-src
+data:
+  producer.cpp: |
+{{ .Files.Get "apps/producer.cpp" | indent 4 }}
+  consumer.cpp: |
+{{ .Files.Get "apps/consumer.cpp" | indent 4 }}

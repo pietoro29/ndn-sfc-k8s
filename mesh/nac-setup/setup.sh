@@ -24,6 +24,15 @@ docker run --rm \
   local/nac-generator:latest \
   python3 generate_nac_keys.py
 
+  # ここでNLSR設定生成スクリプトを実行
+echo "=== 2.5. Generating NLSR Advertising Config ==="
+docker run --rm \
+  -v "${MESH_ROOT}:/work" \
+  --user "$(id -u):$(id -g)" \
+  --env HOME=/tmp \
+  local/nac-generator:latest \
+  python3 generate_nlsr_advertise_config.py
+
 echo "=== 3. Creating Kubernetes Secrets ==="
 # 既存のSecretを削除
 kubectl delete secret -l type=ndn-node-secret || true

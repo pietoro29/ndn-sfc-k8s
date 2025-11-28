@@ -10,6 +10,6 @@ WORKDIR /app
 
 # スクリプトをコピー
 COPY generate_nac_keys.py .
-
+COPY generate_nlsr_advertise_config.py .
 # デフォルトコマンド
 CMD ["python3", "generate_nac_keys.py"]

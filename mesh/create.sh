@@ -52,10 +52,19 @@ for pod in $PODS; do
         fi
 
         # NLSR起動
-        # Helmによって /etc/nlsr/nlsr.conf に既に正しい設定があるため、それをコピーして使う
         if ! pgrep nlsr > /dev/null; then
             mkdir -p /tmp/nlsr
+            #Helm由来のベース設定をコピー
             cp /etc/nlsr/nlsr.conf /tmp/nlsr/nlsr.conf
+            #NAC由来のadvertising設定があれば追記結合
+            if [ -f /data/nac-data/nlsr-advertising.conf ]; then
+                echo \"Merging NAC advertising config...\"
+                echo \"\" >> /tmp/nlsr/nlsr.conf
+                cat /data/nac-data/nlsr-advertising.conf >> /tmp/nlsr/nlsr.conf
+            else
+                echo \"No NAC advertising config found. Using base config only.\"
+            fi
+
             nohup nlsr -f /tmp/nlsr/nlsr.conf > /nlsr.log 2>&1 &
         fi
 

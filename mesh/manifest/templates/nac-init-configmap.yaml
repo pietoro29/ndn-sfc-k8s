@@ -32,9 +32,15 @@ data:
     if [ ${#DATA_FILES[@]} -gt 0 ]; then
         echo "Found ${#DATA_FILES[@]} data files. Copying..."
         cp "${DATA_FILES[@]}" /data/nac-data/
-        ls -l /data/nac-data/
     else
         echo "No KEK/KDK data found. (This is normal for nodes without access rights)"
     fi
 
+    CONF_FILES=(/mnt/secrets/*.conf)
+    if [ ${#CONF_FILES[@]} -gt 0 ]; then
+        echo "Found ${#CONF_FILES[@]} config files. Copying..."
+        cp "${CONF_FILES[@]}" /data/nac-data/
+    fi
+
+    ls -l /data/nac-data/
     echo "=== NAC Init Script Completed ==="
