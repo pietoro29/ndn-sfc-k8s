@@ -4,40 +4,31 @@ cd "$(dirname "$0")"
 WORK_DIR=$(pwd)
 MESH_ROOT=$(dirname "$WORK_DIR")
 OUT_DIR="$WORK_DIR/out"
+IMAGE="icekarinn/nac-generator:v1.2"
 
-# 生成物をクリア
 rm -rf "$OUT_DIR"
 
-echo "=== 1. Building Generator Image ==="
-# ここでDockerfileをビルド
-docker build -t local/nac-generator:latest .
+run_generator() {
+  local script="$1"
+  echo ">>> Running: $script"
+
+  docker run --rm \
+    -v "${MESH_ROOT}:/work" \
+    --user "$(id -u):$(id -g)" \
+    --env HOME=/tmp \
+    "$IMAGE" \
+    python3 "$script"
+}
 
 echo "=== 2. Generating Keys ==="
-# ビルドしたイメージを実行
-# topology.txtを読むために親ディレクトリ(MESH_ROOT)をマウント
-# コンテナ内の /app にスクリプトがあるので、WORKDIRの変更は不要だが
-# マウントパスの調整が必要
-docker run --rm \
-  -v "${MESH_ROOT}:/work" \
-  --user "$(id -u):$(id -g)" \
-  --env HOME=/tmp \
-  local/nac-generator:latest \
-  python3 generate_nac_keys.py
+run_generator generate_nac_keys.py
 
-  # ここでNLSR設定生成スクリプトを実行
 echo "=== 2.5. Generating NLSR Advertising Config ==="
-docker run --rm \
-  -v "${MESH_ROOT}:/work" \
-  --user "$(id -u):$(id -g)" \
-  --env HOME=/tmp \
-  local/nac-generator:latest \
-  python3 generate_nlsr_advertise_config.py
+run_generator generate_nlsr_advertise_config.py
 
 echo "=== 3. Creating Kubernetes Secrets ==="
-# 既存のSecretを削除
 kubectl delete secret -l type=ndn-node-secret || true
 
-# ディレクトリごとにSecret作成
 for NODE_PATH in "$OUT_DIR"/*; do
     [ -d "$NODE_PATH" ] || continue
     NODE_NAME=$(basename "$NODE_PATH")
