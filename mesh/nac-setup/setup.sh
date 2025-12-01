@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 WORK_DIR=$(pwd)
 MESH_ROOT=$(dirname "$WORK_DIR")
 OUT_DIR="$WORK_DIR/out"
-IMAGE="icekarinn/nac-generator:v1.2"
+IMAGE="icekarinn/nac-generator:v1.3"
 
 rm -rf "$OUT_DIR"
 

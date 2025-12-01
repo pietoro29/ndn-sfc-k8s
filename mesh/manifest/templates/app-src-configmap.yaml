@@ -11,3 +11,6 @@ data:
 
   nac-utils.hpp: |
     {{- .Files.Get "apps/nac-utils.hpp" | nindent 4 }}
+
+  kdk-server.cpp: |
+    {{- .Files.Get "apps/kdk-server.cpp" | nindent 4 }}

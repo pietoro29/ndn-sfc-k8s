@@ -91,13 +91,11 @@ def generate_kek_and_kdk(am_identity, am_dir, content_config, node_cert_map):
             continue
 
         consumer_cert = Path(node_cert_map[consumer])
-        consumer_dir = OUT_DIR / consumer
-        consumer_dir.mkdir(exist_ok=True)
 
-        kdk_filename = f"kdk_{prefix_hash}.data"
-        kdk_path = consumer_dir / kdk_filename
+        kdk_filename = f"kdk_{prefix_hash}_{consumer}.data"
+        kdk_path = am_dir / kdk_filename
 
-        print(f"    > Generating KDK for {consumer}")
+        print(f"    > Generating KDK for {consumer} (Saved in AM dir)")
         run_cmd(f"ndn-nac add-member -i {am_identity} -d {data_prefix} -m {consumer_cert} -o {kdk_path}")
 
 def process_nac_policies(config, node_cert_map):
