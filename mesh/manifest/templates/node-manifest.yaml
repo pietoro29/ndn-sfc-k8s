@@ -64,6 +64,7 @@ spec:
               echo "Pod started. Waiting for activation script..."
               mkdir -p /run/nfd
               mkdir -p /tmp/nlsr
+
               while true; do sleep 3600; done
 
           volumeMounts:

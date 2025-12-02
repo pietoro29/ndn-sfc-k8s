@@ -1,4 +1,4 @@
-/* consumer.cpp (KDK宛名自動同期版) */
+/* consumer.cpp (KDKネットワーク取得対応版) */
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/security/key-chain.hpp>
 #include <ndn-cxx/security/validator-config.hpp>
@@ -21,30 +21,104 @@ public:
   Consumer()
     : m_face(nullptr, m_keyChain)
     , m_validator(m_face)
-    // Decryptorの初期化はコンストラクタ本体で行う
   {
     // 1. 環境設定
     const char* prefixEnv = std::getenv("NDN_DATA_PREFIX");
     m_dataPrefix = prefixEnv ? Name(prefixEnv) : Name("/ndn/test/data");
 
-    // バリデータ設定
+    // バリデータ設定 (テスト用: 全許可)
     m_validator.load(R"CONF(trust-anchor { type any })CONF", "fake-config");
+  }
 
-    // 2. KDKの自動検知とロード
+  void run()
+  {
+    // 2. KDKの検索 (ローカル -> なければネットワーク)
     std::string kdkPath = findKeyFile("/data/nac-data", "kdk_");
-    if (kdkPath.empty()) {
-        std::cerr << "WARN: No KDK file found. Decryption might fail." << std::endl;
-        return;
+
+    if (!kdkPath.empty()) {
+        std::cout << "Found local KDK: " << kdkPath << std::endl;
+        auto kdkData = ndn::io::load<Data>(kdkPath);
+        if (kdkData) {
+            initializeDecryptor(kdkData);
+            sendContentInterest(); // 準備完了なのでコンテンツを取りに行く
+        } else {
+            std::cerr << "Failed to load local KDK. Trying network..." << std::endl;
+            fetchKdk();
+        }
+    } else {
+        std::cout << "No local KDK found. Fetching from KDK Server..." << std::endl;
+        fetchKdk();
     }
 
-    m_kdkData = ndn::io::load<Data>(kdkPath);
-    if (!m_kdkData) {
-        throw std::runtime_error("Failed to parse KDK data");
-    }
-    std::cout << "Loaded KDK: " << m_kdkData->getName() << std::endl;
+    m_face.processEvents();
+  }
 
-    // 3. KDKから「正しいIdentity」を抽出する
-    // KDK名: /<KEK-Prefix>/KDK/<ID>/ENCRYPTED-BY/<IdentityName>/KEY/<KeyID>
+private:
+  // KDKをネットワークから取得する
+  void fetchKdk() {
+      // KDKの名前は通常 /<DataPrefix>/NAC/KDK/<KEK-ID>/... となる
+      // 正確な名前がわからないため、Prefix探索を行う
+      Name kdkQuery = m_dataPrefix;
+      kdkQuery.append("NAC").append("KDK");
+
+      Interest interest(kdkQuery);
+      interest.setCanBePrefix(true); // 具体的なIDが不明なためPrefixで検索
+      interest.setMustBeFresh(true);
+
+      std::cout << "=== Fetching KDK: " << interest.getName() << " ===" << std::endl;
+
+      m_face.expressInterest(interest,
+          std::bind(&Consumer::onKdkData, this, std::placeholders::_1, std::placeholders::_2),
+          std::bind(&Consumer::onNack, this, std::placeholders::_1, std::placeholders::_2),
+          std::bind(&Consumer::onTimeout, this, std::placeholders::_1)
+      );
+  }
+
+  // KDK受信時の処理
+  void onKdkData(const Interest&, const Data& data) {
+      std::cout << "Received KDK Data: " << data.getName() << std::endl;
+      // メモリ上のDataをshared_ptrとしてコピー
+      auto kdkData = std::make_shared<Data>(data);
+
+      try {
+          initializeDecryptor(kdkData);
+          // KDKの準備ができたら、本来のコンテンツを取りに行く
+          sendContentInterest();
+      } catch (const std::exception& e) {
+          std::cerr << "Failed to initialize Decryptor with fetched KDK: " << e.what() << std::endl;
+          exit(1);
+      }
+  }
+
+  // Decryptorの初期化 (ローカル/ネットワーク共通)
+  void initializeDecryptor(std::shared_ptr<Data> kdkData) {
+    m_kdkData = kdkData;
+
+    // Node3のIdentityを特定する (setup.shで生成されたもの)
+    // ※今回はハードコードだが、汎用化するなら環境変数等で自身のIDを渡す
+    Name identityName("/ndn/waseda/labA/ndn-node3");
+
+    ndn::security::pib::Identity myIdentity;
+    try {
+        myIdentity = m_keyChain.getPib().getIdentity(identityName);
+    } catch (const std::exception&) {
+        std::cout << "WARN: Full identity " << identityName << " not found. Using default." << std::endl;
+        myIdentity = m_keyChain.getPib().getDefaultIdentity();
+    }
+
+    std::cout << "Initializing Decryptor with Identity: " << myIdentity.getName() << std::endl;
+
+    // Decryptor作成
+    m_decryptor = std::make_unique<Decryptor>(
+        myIdentity.getDefaultKey(),
+        m_validator,
+        m_keyChain,
+        m_face
+    );
+
+    // KDK配信登録 (Decryptorが内部でKDKを要求したときに答えるため)
+    // 名前構造: .../ENCRYPTED-BY/<KeyLocator>
+    // ENCRYPTED-BY コンポーネントを探す
     Name kdkName = m_kdkData->getName();
     ssize_t encryptedByIdx = -1;
     for (size_t i = 0; i < kdkName.size(); ++i) {
@@ -54,83 +128,24 @@ public:
         }
     }
 
-    if (encryptedByIdx == -1) {
-        throw std::runtime_error("Invalid KDK name format (missing ENCRYPTED-BY)");
+    if (encryptedByIdx != -1) {
+        Name prefixToServe = m_kdkData->getName().getPrefix(encryptedByIdx + 1);
+        std::cout << "Serving KDK to Decryptor at: " << prefixToServe << std::endl;
+
+        m_kdkHandle = m_face.setInterestFilter(
+            prefixToServe,
+            [this](const InterestFilter&, const Interest& interest) {
+                if (interest.matchesData(*m_kdkData)) {
+                     m_face.put(*m_kdkData);
+                }
+            },
+            [](const Name&, const std::string& msg) { std::cerr << "KDK Reg Failed: " << msg << std::endl; }
+        );
     }
-
-    // ENCRYPTED-BY の後ろから KEY の前までが Identity Name
-    // 例: .../ENCRYPTED-BY /ndn/waseda/labA/ndn-node3 /KEY/...
-    //                       ^ start                     ^ end
-    // Name::getPrefix などを駆使して抽出もできるが、
-    // ここではKeyChainから「KDK名に含まれるIdentity」を探す
-
-    ndn::security::pib::Identity identity;
-    bool found = false;
-    for (const auto& id : m_keyChain.getPib().getIdentities()) {
-        // ID名が KDK名の一部に含まれているか確認
-        // (ID名が /ndn/waseda/labA/ndn-node3 なら、KDK名の中にその並びがあるはず)
-        // 部分一致判定は面倒なので、ここでは簡易的に「デフォルトID」か「KDK名から推測」する
-
-        // 確実な方法: KDKの名前構造からIdentityを切り出す
-        // ENCRYPTED-BY(idx) + 1  から  KEY(idx_key) - 1 まで
-        // しかしKEYの位置を探すのも手間なので、
-        // 「デフォルトID」と「短いID(ndn-node3)」の両方を試す戦略をとる
-
-        try {
-             // とりあえず setup.sh で作ったフルネームIdentityを持っているはず
-             Name fullName("/ndn/waseda/labA/ndn-node3"); // 環境に合わせて修正が必要だが...
-             // 自動化のため、KDK名のサフィックス(KEYの一つ前)を見る手もあるが、
-             // 一番安全なのは「KDKが要求している名前で待機すること」
-        } catch (...) {}
-    }
-
-    // ★最も確実な修正★
-    // Decryptorに渡す「自分の鍵」を、KeyChainのデフォルトではなく、
-    // KDKファイルと整合するものを強制的に探して設定する。
-
-    // Node3の正しいフルネームIdentity (setup.shで生成されたもの)
-    // ※汎用化のため、topology.txtや環境変数から取るべきだが、今回はハードコードで解決する
-    Name identityName("/ndn/waseda/labA/ndn-node3");
-
-    ndn::security::pib::Identity myIdentity;
-    try {
-        myIdentity = m_keyChain.getPib().getIdentity(identityName);
-    } catch (const std::exception&) {
-        // フルネームがない場合、仕方ないのでデフォルトを使う
-        std::cout << "WARN: Full identity " << identityName << " not found. Using default." << std::endl;
-        myIdentity = m_keyChain.getPib().getDefaultIdentity();
-    }
-
-    std::cout << "Using Identity for Decryptor: " << myIdentity.getName() << std::endl;
-
-    // 4. Decryptorの初期化 (遅延初期化)
-    m_decryptor = std::make_unique<Decryptor>(
-        myIdentity.getDefaultKey(), // KDKに適合する鍵を渡す
-        m_validator,
-        m_keyChain,
-        m_face
-    );
-
-    // 5. KDK配信登録
-    // Decryptorが投げるInterest (Short Name かもしれないし Long かもしれない) を
-    // 確実に拾うために、KDKの完全一致ではなく、前方一致(Prefix)で登録する
-    // .../ENCRYPTED-BY まで登録しておけば、後ろが何であれ拾える
-    Name prefixToServe = m_kdkData->getName().getPrefix(encryptedByIdx + 1); // .../ENCRYPTED-BY
-    std::cout << "Serving KDK at prefix: " << prefixToServe << std::endl;
-
-    m_kdkHandle = m_face.setInterestFilter(
-        prefixToServe,
-        [this](const InterestFilter&, const Interest& interest) {
-            // Decryptorからの要求であれば返す
-            // 名前が完全一致しなくても、KDKを返してみる (Decryptorが判断する)
-             m_face.put(*m_kdkData);
-        },
-        [](const Name&, const std::string& msg) { std::cerr << "KDK Reg Failed: " << msg << std::endl; }
-    );
   }
 
-  void run()
-  {
+  // コンテンツ取得リクエスト
+  void sendContentInterest() {
     Interest interest(m_dataPrefix);
     interest.setCanBePrefix(true);
     interest.setMustBeFresh(true);
@@ -141,13 +156,15 @@ public:
       std::bind(&Consumer::onNack, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&Consumer::onTimeout, this, std::placeholders::_1)
     );
-
-    m_face.processEvents();
   }
 
-private:
   void onData(const Interest&, const Data& data) {
-    std::cout << "Received Data. Decrypting..." << std::endl;
+    std::cout << "Received Content Data. Decrypting..." << std::endl;
+
+    if (!m_decryptor) {
+        std::cerr << "FATAL: Decryptor not initialized!" << std::endl;
+        exit(1);
+    }
 
     Block contentBlock = data.getContent();
     contentBlock.parse();
@@ -167,20 +184,20 @@ private:
     );
   }
 
-  void onNack(const Interest&, const lp::Nack& nack) const {
-    std::cerr << "Nack: " << nack.getReason() << std::endl;
+  void onNack(const Interest& interest, const lp::Nack& nack) const {
+    std::cerr << "Nack for " << interest.getName() << ": " << nack.getReason() << std::endl;
     exit(1);
   }
 
-  void onTimeout(const Interest&) const {
-    std::cerr << "Timeout" << std::endl;
+  void onTimeout(const Interest& interest) const {
+    std::cerr << "Timeout for " << interest.getName() << std::endl;
     exit(1);
   }
 
   KeyChain m_keyChain;
   Face m_face;
   ValidatorConfig m_validator;
-  std::unique_ptr<Decryptor> m_decryptor; // ポインタに変更
+  std::unique_ptr<Decryptor> m_decryptor;
   std::shared_ptr<Data> m_kdkData;
   ScopedRegisteredPrefixHandle m_kdkHandle;
   Name m_dataPrefix;

@@ -47,8 +47,19 @@ for pod in $PODS; do
     # kubectl exec で内部コマンドを一気に流し込む
     # nohup & を使うことで、スクリプト終了後もプロセスを維持
     kubectl exec $pod -- /bin/bash -c "
-        # 証明書セットアップ
-        ndnsec key-gen /$NODE_NAME | ndnsec cert-install - || true
+        #init-containerで証明書は既にimportされていることを確認
+        EXISTING_ID=\$(ndnsec list 2>/dev/null | grep -o \"/.*\" | head -n 1)
+        if [ -n \"\$EXISTING_ID\" ]; then
+             echo \"Found identity prepared by InitContainer: \$EXISTING_ID\"
+             ndnsec set-default \$EXISTING_ID
+        else
+             echo \"Error: No identity found in /data/.ndn (HOME=\$HOME).\"
+             echo \"Debug: Listing /data/.ndn content:\"
+             ls -R /data/.ndn
+             echo \"Debug: Output of ndnsec list:\"
+             ndnsec list
+             exit 1
+        fi
 
         # NFD起動 (二重起動防止)
         if ! pgrep nfd > /dev/null; then
@@ -82,6 +93,29 @@ for pod in $PODS; do
                 done
             done
         ) > /face-create.log 2>&1 &
+
+        if ls /data/nac-data/kdk_*.data 1> /dev/null 2>&1; then
+            echo \"=== AM Node Detected (KDK files found) ===\"
+
+            # すでに起動していない場合のみ実行
+            if ! pgrep kdk-server > /dev/null; then
+                echo \"Compiling KDK Server...\"
+                # pkg-configの実行結果をコンテナ内で展開するために \$() を使用
+                g++ -o /usr/local/bin/kdk-server /usr/src/app/kdk-server.cpp \
+                    \$(pkg-config --cflags --libs libndn-cxx) -std=c++17
+
+                if [ \$? -eq 0 ]; then
+                    echo \"Starting KDK Server in background...\"
+                    nohup /usr/local/bin/kdk-server > /data/kdk-server.log 2>&1 &
+                else
+                    echo \"Error: Failed to compile KDK Server\"
+                fi
+            else
+                 echo \"KDK Server is already running.\"
+            fi
+        else
+            echo \"=== Consumer/Producer Node (No KDK files) ===\"
+        fi
     "
 done
 
