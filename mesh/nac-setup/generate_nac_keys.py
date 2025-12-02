@@ -118,7 +118,7 @@ def main():
     all_nodes = get_all_nodes()
 
     # 2. 基本IDの生成 (全ノード)
-    org_prefix = config.get('org_prefix', '/ndn/test')
+    org_prefix = config.get('org_prefix', '')
     node_cert_map = generate_base_identities(all_nodes, org_prefix)
 
     # 3. NACポリシーの適用 (AM, KEK, KDK)
