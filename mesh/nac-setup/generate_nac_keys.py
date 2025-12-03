@@ -41,7 +41,7 @@ def load_config(path):
     if not path.exists():
         raise FileNotFoundError(f"Policy not found: {path}")
     with path.open('r') as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) #yamlをpythonのdictやlistに変換する。{"policies":[{"am_node": "ndn-node1"}]}的な
 
 def generate_base_identities(nodes, org_prefix):
     print(f"--- Generating Base Identities for: {nodes} ---")
@@ -50,7 +50,7 @@ def generate_base_identities(nodes, org_prefix):
         node_dir = OUT_DIR / node
         node_dir.mkdir(exist_ok=True)
 
-        identity = f"{org_prefix}/{node}"
+        identity = f"{org_prefix}/{node}" #/ndn/waseda/labA/ndn-nodeX
         p12_path = node_dir / "identity.p12"
         cert_dump_path = node_dir / "self.cert"
 
@@ -112,17 +112,14 @@ def process_nac_policies(config, node_cert_map):
 def main():
     print("=== Starting NAC Key Generation ===")
 
-    # 1. 初期化
     clean_dir(OUT_DIR)
     config = load_config(POLICY_FILE)
     all_nodes = get_all_nodes()
 
-    # 2. 基本IDの生成 (全ノード)
-    org_prefix = config.get('org_prefix', '')
-    node_cert_map = generate_base_identities(all_nodes, org_prefix)
+    org_prefix = config.get('org_prefix', '') #yamlにorg_prefixが存在すれば対応する値("/ndn/waseda/labA")を返す
+    node_cert_map = generate_base_identities(all_nodes, org_prefix) #全ノードの鍵や証明書を作って置いた場所を返す
 
-    # 3. NACポリシーの適用 (AM, KEK, KDK)
-    process_nac_policies(config, node_cert_map)
+    process_nac_policies(config, node_cert_map) #AMノードでの鍵、証明書を作る
 
     print(f"\n=== Generation Complete. Files are in '{OUT_DIR}' ===")
 

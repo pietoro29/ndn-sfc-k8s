@@ -1,10 +1,8 @@
 # 共通設定
 org_prefix: "/ndn/waseda/labA"
-am_prefix_base: "/ndn/AM"  # この後ろに /<NodeName> が付く
+am_prefix_base: "/ndn/AM"
 
-# ポリシー定義リスト
 policies:
-  # ndn-node1 が管理するデータ
   - am_node: "ndn-node1"
     data_contents:
       - prefix: "/ndn/jp/waseda/labA/homepage/index.html"
@@ -14,7 +12,3 @@ policies:
       # 例: 別のデータがあればここに追加
       # - prefix: "/ndn/jp/waseda/labA/secret/file"
       #   allowed_consumers: ["ndn-node2", "ndn-node3"]
-
-  # ndn-node2 が管理するデータ (例)
-  # - am_node: "ndn-node2"
-  #   data_contents: ...
