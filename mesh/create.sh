@@ -14,14 +14,40 @@ docker run --rm \
   python generate_values.py
 echo "values.yaml generated."
 
+echo "=== 1. Base Setup (Generating Identities) ==="
+chmod +x "${SCRIPT_DIR}/setup/setup.sh"
+"${SCRIPT_DIR}/setup/setup.sh"
+
+echo "=== 2. NAC Setup (Optional) ==="
+if [ -f "${SCRIPT_DIR}/nac-setup/nac_policy.yaml" ]; then
+    echo "NAC Policy found. Running NAC setup..."
+    "${SCRIPT_DIR}/nac-setup/setup.sh"
+else
+    echo "No NAC policy found. Skipping NAC setup."
+fi
+
+echo "=== 3. Creating Kubernetes Secrets ==="
+# ここで一括してSecretを作るのが最も安全です
+kubectl delete secret -l type=ndn-node-secret || true
+OUT_DIR="${SCRIPT_DIR}/setup/out"
+
+for NODE_PATH in "$OUT_DIR"/*; do
+    [ -d "$NODE_PATH" ] || continue
+    NODE_NAME=$(basename "$NODE_PATH")
+    SECRET_NAME="ndn-secret-${NODE_NAME}"
+
+    echo "Creating secret $SECRET_NAME ..."
+    kubectl create secret generic "$SECRET_NAME" \
+        --from-file="$NODE_PATH" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    kubectl label secret "$SECRET_NAME" type=ndn-node-secret --overwrite
+done
+
 echo "=== Syncing App Source Code ==="
-# ソースコードをHelmチャート内にコピーする
-# これにより、開発は /mesh/apps で行い、デプロイ時に manifest に反映される
 mkdir -p "${SCRIPT_DIR}/manifest/apps"
 cp "${SCRIPT_DIR}/apps/"* "${SCRIPT_DIR}/manifest/apps/"
 
 echo "=== Installing Helm Chart ==="
-# 既存のものを削除
 if helm status ndn-cluster > /dev/null 2>&1; then
     echo "Uninstalling existing release..."
     helm uninstall ndn-cluster

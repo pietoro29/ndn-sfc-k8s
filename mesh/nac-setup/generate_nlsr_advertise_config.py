@@ -3,7 +3,7 @@ from pathlib import Path
 
 WORK_DIR = Path("/work")
 POLICY_FILE = WORK_DIR / "nac-setup" / "nac_policy.yaml"
-OUT_DIR = WORK_DIR / "nac-setup" / "out"
+OUT_DIR = WORK_DIR / "setup" / "out"
 
 def load_policy(path):
     path = Path(path)

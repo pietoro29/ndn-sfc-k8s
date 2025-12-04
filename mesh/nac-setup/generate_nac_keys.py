@@ -5,9 +5,8 @@ import shutil
 import hashlib
 
 WORK_DIR = Path("/work")
-TOPOLOGY_FILE = WORK_DIR / "topology.txt"
+BASE_OUT_DIR = WORK_DIR / "setup" / "out"
 POLICY_FILE = WORK_DIR / "nac-setup" / "nac_policy.yaml"
-OUT_DIR = WORK_DIR / "nac-setup" / "out"
 P12_PASS = "password"
 
 def run_cmd(cmd):
@@ -17,53 +16,29 @@ def run_cmd(cmd):
         print(f"Error running cmd: {cmd}")
         raise
 
-def clean_dir(path):
-    if path.exists():
-        shutil.rmtree(path)
-    path.mkdir()
-
-def get_all_nodes():
-    topo_path = Path(TOPOLOGY_FILE)
-
-    if not topo_path.exists():
-        raise FileNotFoundError(f"Topology file not found: {topo_path}")
-
-    nodes = set()
-    with topo_path.open('r') as f:
-        for line in f:
-            parts = line.strip().split(':')
-            if len(parts) >= 1:
-                node_id = parts[0].strip()
-                nodes.add(f"ndn-node{node_id}")
-    return list(nodes)
-
 def load_config(path):
     if not path.exists():
         raise FileNotFoundError(f"Policy not found: {path}")
     with path.open('r') as f:
         return yaml.safe_load(f) #yamlをpythonのdictやlistに変換する。{"policies":[{"am_node": "ndn-node1"}]}的な
 
-def generate_base_identities(nodes, org_prefix):
-    print(f"--- Generating Base Identities for: {nodes} ---")
+def map_existing_nodes():
     node_cert_map = {}
-    for node in nodes:
-        node_dir = OUT_DIR / node
-        node_dir.mkdir(exist_ok=True)
+    if not BASE_OUT_DIR.exists():
+         raise FileNotFoundError(f"Base output directory not found at {BASE_OUT_DIR}. Run setup/setup.sh first.")
 
-        identity = f"{org_prefix}/{node}" #/ndn/waseda/labA/ndn-nodeX
-        p12_path = node_dir / "identity.p12"
-        cert_dump_path = node_dir / "self.cert"
-
-        run_cmd(f"ndnsec key-gen -t r {identity} | ndnsec cert-install -")
-        run_cmd(f"ndnsec export -P {P12_PASS} -o {p12_path} -i {identity}")
-        run_cmd(f"ndnsec cert-dump -i {identity} > {cert_dump_path}")
-
-        node_cert_map[node] = cert_dump_path
+    for node_dir in BASE_OUT_DIR.iterdir():
+        if node_dir.is_dir():
+            node_name = node_dir.name
+            cert_path = node_dir / "self.cert"
+            if cert_path.exists():
+                node_cert_map[node_name] = cert_path
     return node_cert_map
 
 def setup_am_identity(am_node, am_base):
-    am_dir = OUT_DIR / am_node
-    am_dir.mkdir(exist_ok = True)
+    am_dir = BASE_OUT_DIR / am_node
+    if not am_dir.exists():
+        am_dir.mkdir(parents=True, exist_ok=True)
     am_identity = f"{am_base}/{am_node}"
     am_p12_path = am_dir / "am-identity.p12"
 
@@ -76,7 +51,6 @@ def setup_am_identity(am_node, am_base):
 def generate_kek_and_kdk(am_identity, am_dir, content_config, node_cert_map):
     data_prefix = content_config['prefix']
     consumers = content_config.get('allowed_consumers', [])
-    #プレフィックスのハッシュでファイル名を作成
     prefix_hash = hashlib.md5(data_prefix.encode()).hexdigest()[:8]
 
     kek_filename = f"kek_{prefix_hash}.data"
@@ -90,8 +64,7 @@ def generate_kek_and_kdk(am_identity, am_dir, content_config, node_cert_map):
             print(f"    ! Warning: Consumer {consumer} not found. Skipping.")
             continue
 
-        consumer_cert = Path(node_cert_map[consumer])
-
+        consumer_cert = node_cert_map[consumer]
         kdk_filename = f"kdk_{prefix_hash}_{consumer}.data"
         kdk_path = am_dir / kdk_filename
 
@@ -112,16 +85,13 @@ def process_nac_policies(config, node_cert_map):
 def main():
     print("=== Starting NAC Key Generation ===")
 
-    clean_dir(OUT_DIR)
     config = load_config(POLICY_FILE)
-    all_nodes = get_all_nodes()
+    node_cert_map = map_existing_nodes()
+    print(f"Loaded {len(node_cert_map)} nodes from base setup.")
 
-    org_prefix = config.get('org_prefix', '') #yamlにorg_prefixが存在すれば対応する値("/ndn/waseda/labA")を返す
-    node_cert_map = generate_base_identities(all_nodes, org_prefix) #全ノードの鍵や証明書を作って置いた場所を返す
+    process_nac_policies(config, node_cert_map)
 
-    process_nac_policies(config, node_cert_map) #AMノードでの鍵、証明書を作る
-
-    print(f"\n=== Generation Complete. Files are in '{OUT_DIR}' ===")
+    print(f"\n=== NAC Generation Complete. Files added to '{BASE_OUT_DIR}' ===")
 
 if __name__ == "__main__":
     main()
